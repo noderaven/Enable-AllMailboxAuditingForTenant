@@ -19,6 +19,7 @@
     - **Optimization:** Checks current audit settings using the modern 'Get-EXOMailbox' cmdlet and skips mailboxes that are already compliant.
     - **Detailed Logging:** Provides step-by-step compliance check details for transparency and easier debugging.
     - **Verification:** After applying changes, the script re-checks the settings to confirm they were applied successfully.
+    - **Detailed Summary:** At the end, it provides a summary of exactly which settings were changed on which mailboxes.
     - Applies a comprehensive and customizable set of auditing rules.
     - Implements robust error handling to skip problematic mailboxes and continue processing.
     - Provides real-time progress updates in the console.
@@ -26,12 +27,12 @@
     - Summarizes the results upon completion.
 
 .NOTES
-    Prerequisites:   Windows PowerShell 5.1 or later.
-                     Permissions: The user running the script must have at least 'View-Only Organization Management'
-                     and 'Mail Recipients' roles. 'Organization Management' is required to make changes.
-    Advanced:        This script does not check for mailbox audit bypass associations set with
-                     'Set-MailboxAuditBypassAssociation'. If auditing does not appear to work for
-                     a specific account after running this script, check for a bypass association separately.
+    Prerequisites:      Windows PowerShell 5.1 or later.
+                        Permissions: The user running the script must have at least 'View-Only Organization Management'
+                        and 'Mail Recipients' roles. 'Organization Management' is required to make changes.
+    Advanced:           This script does not check for mailbox audit bypass associations set with
+                        'Set-MailboxAuditBypassAssociation'. If auditing does not appear to work for
+                        a specific account after running this script, check for a bypass association separately.
 
 .EXAMPLE
     .\Enable-AllMailboxAuditingForTenant.ps1
@@ -154,11 +155,12 @@ function Connect-ToExchangeOnline {
 
 #region Main Processing Block
 
-# --- Initialize Counters ---
+# --- Initialize Counters and Change Log ---
 $totalMailboxes = 0
 $successCount = 0
 $failureCount = 0
 $skippedCount = 0
+$changedMailboxes = New-Object System.Collections.Generic.List[PSCustomObject] # For detailed change summary
 $startTime = Get-Date
 
 # --- Connect to Exchange ---
@@ -292,6 +294,14 @@ if ($totalMailboxes -gt 0) {
 
                 Write-Host "-> Successfully applied configuration for '$($displayName)'." -ForegroundColor Green
                 $successCount++
+
+                # Add details to the summary log
+                $changeLogEntry = [PSCustomObject]@{
+                    DisplayName = $displayName
+                    Identity    = $identity
+                    Changes     = $changesToApply.ToArray() # Convert list to array for stable storage
+                }
+                $changedMailboxes.Add($changeLogEntry)
                 
                 # Pause only after a successful write operation.
                 Start-Sleep -Milliseconds $ThrottleDelay
@@ -313,7 +323,7 @@ if ($totalMailboxes -gt 0) {
         catch {
             # Catch errors for individual mailboxes so the script can continue
             Write-Warning "-> FAILED to process '$($displayName)'. See error below."
-            Write-Warning "   Error: $($_.Exception.ToString())" # Log the full exception details
+            Write-Warning "    Error: $($_.Exception.ToString())" # Log the full exception details
             $failureCount++
         }
     }
@@ -336,6 +346,20 @@ Write-Host "Total Mailboxes Found: $totalMailboxes"
 Write-Host "Successfully Configured: $successCount" -ForegroundColor Green
 Write-Host "Skipped (Already Compliant): $skippedCount" -ForegroundColor DarkGray
 Write-Host "Failed to Configure: $failureCount" -ForegroundColor $(if ($failureCount -gt 0) { 'Red' } else { 'Green' })
+
+# --- Detailed Change Summary ---
+if ($changedMailboxes.Count -gt 0) {
+    Write-Host "`n------------------------------------------------------------" -ForegroundColor Cyan
+    Write-Host "Detailed Change Summary for Modified Mailboxes" -ForegroundColor Cyan
+    Write-Host "------------------------------------------------------------" -ForegroundColor Cyan
+
+    foreach ($entry in $changedMailboxes) {
+        Write-Host "`nMailbox: $($entry.DisplayName) ($($entry.Identity))" -ForegroundColor White
+        foreach ($change in $entry.Changes) {
+            Write-Host "  - $change" -ForegroundColor Yellow
+        }
+    }
+}
 
 if ($failureCount -gt 0) {
     Write-Warning "`nSome mailboxes failed. Please review the transcript log for details:"
