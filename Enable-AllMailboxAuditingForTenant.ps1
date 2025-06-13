@@ -18,7 +18,7 @@
     - Retrieves all recipient types using the modern 'Get-EXORecipient' cmdlet.
     - **Optimization:** Checks current audit settings using the modern 'Get-EXOMailbox' cmdlet and skips mailboxes that are already compliant.
     - **Detailed Logging:** Provides step-by-step compliance check details for transparency and easier debugging.
-    - **Verification:** After applying changes, the script re-checks the settings to confirm they were applied successfully.
+    - **Verification:** After applying changes, the script re-checks all settings to confirm they were applied successfully.
     - **Detailed Summary:** At the end, it provides a summary of exactly which settings were changed on which mailboxes.
     - Applies a comprehensive and customizable set of auditing rules.
     - Implements robust error handling to skip problematic mailboxes and continue processing.
@@ -289,6 +289,7 @@ if ($totalMailboxes -gt 0) {
                     AuditAdmin            = $AdminActions
                     AuditDelegate         = $DelegateActions
                     ErrorAction           = 'Stop'
+                    Confirm               = $false # Suppress confirmation prompt warning
                 }
                 Set-Mailbox @setMailboxParams
 
@@ -306,13 +307,52 @@ if ($totalMailboxes -gt 0) {
                 # Pause only after a successful write operation.
                 Start-Sleep -Milliseconds $ThrottleDelay
 
-                # Verify AuditLogAgeLimit
-                Write-Host "  Verifying AuditLogAgeLimit after setting..."
-                $verifiedSettings = Get-EXOMailbox -Identity $identity -Properties AuditLogAgeLimit
-                if ("$($verifiedSettings.AuditLogAgeLimit)" -ne $targetAgeLimitString) {
-                    Write-Warning "VERIFICATION FAILED: AuditLogAgeLimit is still not set correctly for '$displayName'. Current value: $($verifiedSettings.AuditLogAgeLimit)"
-                } else {
-                    Write-Host "  Verification passed: AuditLogAgeLimit is set to '$($verifiedSettings.AuditLogAgeLimit)'."
+                # --- NEW: Full Verification Step ---
+                Write-Host "  Verifying all settings after application..."
+                $verificationPassed = $true
+                try {
+                    # Get all relevant properties at once for verification
+                    $verifiedSettings = Get-EXOMailbox -Identity $identity -Properties AuditEnabled, AuditLogAgeLimit, AuditOwner, AuditAdmin, AuditDelegate
+
+                    # 1. Verify AuditEnabled
+                    if ($verifiedSettings.AuditEnabled -ne $true) {
+                        $verificationPassed = $false
+                        Write-Warning "  VERIFICATION FAILED: AuditEnabled is '$($verifiedSettings.AuditEnabled)', expected 'True'."
+                    }
+
+                    # 2. Verify AuditLogAgeLimit
+                    if ("$($verifiedSettings.AuditLogAgeLimit)" -ne $targetAgeLimitString) {
+                        $verificationPassed = $false
+                        Write-Warning "  VERIFICATION FAILED: AuditLogAgeLimit is '$($verifiedSettings.AuditLogAgeLimit)', expected '$targetAgeLimitString'."
+                    }
+
+                    # 3. Verify AuditOwner actions
+                    if (Compare-Object -ReferenceObject ($OwnerActions | Sort-Object) -DifferenceObject ($verifiedSettings.AuditOwner | Sort-Object)) {
+                        $verificationPassed = $false
+                        Write-Warning "  VERIFICATION FAILED: AuditOwner actions do not match the target configuration."
+                    }
+
+                    # 4. Verify AuditAdmin actions
+                    if (Compare-Object -ReferenceObject ($AdminActions | Sort-Object) -DifferenceObject ($verifiedSettings.AuditAdmin | Sort-Object)) {
+                        $verificationPassed = $false
+                        Write-Warning "  VERIFICATION FAILED: AuditAdmin actions do not match the target configuration."
+                    }
+
+                    # 5. Verify AuditDelegate actions
+                    if (Compare-Object -ReferenceObject ($DelegateActions | Sort-Object) -DifferenceObject ($verifiedSettings.AuditDelegate | Sort-Object)) {
+                        $verificationPassed = $false
+                        Write-Warning "  VERIFICATION FAILED: AuditDelegate actions do not match the target configuration."
+                    }
+
+                    # Final confirmation message based on verification outcome
+                    if ($verificationPassed) {
+                        Write-Host "-> Successfully confirmed application of all settings for '$($displayName)'." -ForegroundColor Green
+                    } else {
+                        Write-Error "-> Verification FAILED for one or more settings on '$($displayName)'. Please review the warnings above."
+                    }
+                }
+                catch {
+                    Write-Error "-> An error occurred during the verification step for '$($displayName)': $($_.Exception.Message)"
                 }
             }
             else {
