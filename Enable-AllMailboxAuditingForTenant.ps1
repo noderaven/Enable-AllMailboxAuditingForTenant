@@ -92,13 +92,13 @@
 
 #region Script Setup and Pre-flight Checks
 
-# Always enable verbose output for detailed logging.
-$VerbosePreference = "Continue"
+# Suppress verbose output from the underlying EXO V2 module, but keep our own script's detailed output.
+$VerbosePreference = "SilentlyContinue"
 
 # --- Start Logging ---
 $LogDirectory = Join-Path -Path $PSScriptRoot -ChildPath "Logs"
 if (-not (Test-Path -Path $LogDirectory)) {
-    Write-Verbose "Creating log directory at: $LogDirectory"
+    Write-Host "Creating log directory at: $LogDirectory"
     New-Item -Path $LogDirectory -ItemType Directory -Force | Out-Null
 }
 $TranscriptLog = Join-Path -Path $LogDirectory -ChildPath "MailboxAudit_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
@@ -220,57 +220,57 @@ if ($totalMailboxes -gt 0) {
 
         try {
             # OPTIMIZATION: Get current settings to see if an update is needed.
-            Write-Verbose "Checking current audit settings..."
+            Write-Host "  Checking current audit settings..."
             $currentSettings = Get-EXOMailbox -Identity $identity -Properties AuditEnabled, AuditLogAgeLimit, AuditOwner, AuditAdmin, AuditDelegate
             
             $isCompliant = $true
             $changesToApply = New-Object System.Collections.Generic.List[string]
 
             # 1. Check if auditing is enabled
-            Write-Verbose "  - Checking AuditEnabled..."
+            Write-Host "    - Checking AuditEnabled..."
             if ($currentSettings.AuditEnabled -ne $true) {
                 $isCompliant = $false
                 $changesToApply.Add("AuditEnabled: Is '$($currentSettings.AuditEnabled)', will be set to 'True'.")
             } else {
-                Write-Verbose "    ...Compliant."
+                Write-Host "      ...Compliant." -ForegroundColor DarkGray
             }
 
             # 2. Check the log age limit using robust string comparison.
-            Write-Verbose "  - Checking AuditLogAgeLimit..."
+            Write-Host "    - Checking AuditLogAgeLimit..."
             $targetAgeLimitString = "$($AuditLogAgeLimit).00:00:00"
             if ("$($currentSettings.AuditLogAgeLimit)" -ne $targetAgeLimitString) {
                 $isCompliant = $false
                 $currentAgeDisplay = if ([string]::IsNullOrEmpty($currentSettings.AuditLogAgeLimit)) { "[not set]" } else { "$($currentSettings.AuditLogAgeLimit)" }
                 $changesToApply.Add("AuditLogAgeLimit: Is '$currentAgeDisplay', will be set to '$targetAgeLimitString'.")
             } else {
-                Write-Verbose "    ...Compliant."
+                Write-Host "      ...Compliant." -ForegroundColor DarkGray
             }
 
             # 3. Check Owner actions
-            Write-Verbose "  - Checking AuditOwner actions..."
+            Write-Host "    - Checking AuditOwner actions..."
             if (Compare-Object -ReferenceObject ($OwnerActions | Sort-Object) -DifferenceObject ($currentSettings.AuditOwner | Sort-Object)) {
                 $isCompliant = $false
                 $changesToApply.Add("AuditOwner: Actions are non-compliant and will be updated.")
             } else {
-                Write-Verbose "    ...Compliant."
+                Write-Host "      ...Compliant." -ForegroundColor DarkGray
             }
 
             # 4. Check Admin actions
-            Write-Verbose "  - Checking AuditAdmin actions..."
+            Write-Host "    - Checking AuditAdmin actions..."
             if (Compare-Object -ReferenceObject ($AdminActions | Sort-Object) -DifferenceObject ($currentSettings.AuditAdmin | Sort-Object)) {
                 $isCompliant = $false
                 $changesToApply.Add("AuditAdmin: Actions are non-compliant and will be updated.")
             } else {
-                Write-Verbose "    ...Compliant."
+                Write-Host "      ...Compliant." -ForegroundColor DarkGray
             }
             
             # 5. Check Delegate actions
-            Write-Verbose "  - Checking AuditDelegate actions..."
+            Write-Host "    - Checking AuditDelegate actions..."
             if (Compare-Object -ReferenceObject ($DelegateActions | Sort-Object) -DifferenceObject ($currentSettings.AuditDelegate | Sort-Object)) {
                 $isCompliant = $false
                 $changesToApply.Add("AuditDelegate: Actions are non-compliant and will be updated.")
             } else {
-                Write-Verbose "    ...Compliant."
+                Write-Host "      ...Compliant." -ForegroundColor DarkGray
             }
 
             # If the mailbox is not compliant, apply the necessary changes.
@@ -307,12 +307,12 @@ if ($totalMailboxes -gt 0) {
                 Start-Sleep -Milliseconds $ThrottleDelay
 
                 # Verify AuditLogAgeLimit
-                Write-Verbose "Verifying AuditLogAgeLimit after setting..."
+                Write-Host "  Verifying AuditLogAgeLimit after setting..."
                 $verifiedSettings = Get-EXOMailbox -Identity $identity -Properties AuditLogAgeLimit
                 if ("$($verifiedSettings.AuditLogAgeLimit)" -ne $targetAgeLimitString) {
                     Write-Warning "VERIFICATION FAILED: AuditLogAgeLimit is still not set correctly for '$displayName'. Current value: $($verifiedSettings.AuditLogAgeLimit)"
                 } else {
-                    Write-Verbose "Verification passed: AuditLogAgeLimit is set to '$($verifiedSettings.AuditLogAgeLimit)'."
+                    Write-Host "  Verification passed: AuditLogAgeLimit is set to '$($verifiedSettings.AuditLogAgeLimit)'."
                 }
             }
             else {
