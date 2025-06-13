@@ -46,8 +46,8 @@
 # You can customize these variables to fit your organization's compliance requirements.
 # --------------------------------------------------------------------------------------
 
-# Set the maximum age for audit log entries in days. Default is 180.
-[int]$AuditLogAgeLimit = 180
+# Set the maximum age for audit log entries in days. Default is 90 days for E3 licenses.
+[int]$AuditLogAgeLimit = 90
 
 # Define the actions to be audited for the mailbox owner.
 # This list is refined based on direct cmdlet feedback for the Owner scope.
